@@ -3,7 +3,8 @@
  *      Approximates PI integrating the area of a quarter of circle with
  *      riemann integration.
  *
- *      by Matheus Tavares and Giuliano Belinassi
+ *      by Lucas Emanuel Ramos Fernandes Koontz (nUSP 11356241)
+ *      (adapted from Matheus Tavares' and Giuliano Belinassi's work)
  *
  */
 
