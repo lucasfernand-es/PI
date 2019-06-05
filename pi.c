@@ -13,6 +13,9 @@
 #include <pthread.h>
 #include <math.h>
 
+
+#include <unistd.h> 
+
 unsigned num_processos; // number of worker threads
 unsigned N; // number of divisions at integration
 double pi_by_4 = 0; // approximation of pi/4
@@ -29,9 +32,9 @@ struct task {
 	exit(EXIT_FAILURE); \
 }
 
-// This is the function to be executed by all processes. It receives a task
+// This is the function to be executed by all worker_processes. It receives a task
 // and sums the process's work at global pi_by_4 variable.
-void *thread_work(void *arg) {
+void *process_work(void *arg) {
 	struct task *t = (struct task *)arg;
 	double acc = 0; // Thread's local integration variable
 	double interval_size = 1.0 / N; // The circle radius is 1.0
@@ -82,7 +85,8 @@ int main(int argc, char **argv)
 			work_size += 1;
 		tasks[i].start = i * work_size;
 		tasks[i].end = (i + 1) * work_size;
-		if(pthread_create(&threads[i], NULL, thread_work, (void *)&tasks[i]))
+
+		if(pthread_create(&threads[i], NULL, process_work, (void *)&tasks[i]))
 			DIE("Failed to create thread %d\n", i)
 	}
 
