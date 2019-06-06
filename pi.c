@@ -13,7 +13,9 @@
 #include <pthread.h>
 #include <math.h>
 
-
+// ICP Libraries
+#include <sys/ipc.h> 
+#include <sys/shm.h> 
 #include <unistd.h> 
 
 unsigned num_processos; // number of worker threads
@@ -70,18 +72,32 @@ int main(int argc, char **argv)
 	if(pthread_mutex_init(&lock, NULL))
 		DIE("Failed to init mutex\n");
 
-	// Malloc threads' and tasks' arrays
+	// Tasks' arrays
 	if((threads = malloc(num_processos * sizeof(pthread_t))) == NULL)
 		DIE("Threads malloc failed\n");
 	if((tasks = malloc(num_processos * sizeof(struct task))) == NULL)
 		DIE("Tasks malloc failed\n");
 
-	// Initialize threads with default attributes.
+	
+	/**
+	 * ICP 
+	 */
+	// ftok to generate unique key 
+	key_t key = ftok("shmfile", 65); 
+
+	// shmget returns an identifier in shmid 
+    int shmid = shmget(key, 1024, 0666 | IPC_CREAT); 
+
+	// shmat to attach to shared memory 
+    char *str = (char*) shmat(shmid, (void*) 0 , 0); 
+
+
+	// Initialize processes with default attributes.
 	// The work is being splitted as evenly as possible between threads.
-	int threads_with_one_more_work = N % num_processos;
+	int processes_with_one_more_work = N % num_processos;
 	for (int i = 0; i < num_processos; ++i) {
 		int work_size = N / num_processos;
-		if (i < threads_with_one_more_work)
+		if (i < processes_with_one_more_work)
 			work_size += 1;
 		tasks[i].start = i * work_size;
 		tasks[i].end = (i + 1) * work_size;
