@@ -20,8 +20,6 @@
 
 unsigned num_processos; // number of worker threads
 unsigned N; // number of divisions at integration
-double pi_by_4 = 0; // approximation of pi/4
-pthread_mutex_t lock; // protects pi_by_4 writes
 
 // Defines a task of integration over the quarter of circle, with an x-axis
 // start and end indexes. The work must be done in the interval [start, end[
@@ -29,7 +27,14 @@ typedef struct task {
 	int start, end;
 } task;
 
+// Defines a struct for shared memory
+typedef struct shared_memory {
+	double pi_by_4; // approximation of pi/4
+	pthread_mutex_t lock; // protects pi_by_4 writes
+} shared_memory;
 
+// Global Variable with the references to the shared memory segment.
+shared_memory *segment;
 
 #define DIE(...) { \
 	fprintf(stderr, __VA_ARGS__); \
@@ -39,7 +44,7 @@ typedef struct task {
 // This is the function to be executed by all worker_processes. It receives a task
 // and sums the process's work at global pi_by_4 variable.
 void *process_work(void *arg) {
-	task *t = (task *)arg;
+	task *t = (task *) arg;
 	double acc = 0; // Thread's local integration variable
 	double interval_size = 1.0 / N; // The circle radius is 1.0
 
@@ -51,9 +56,9 @@ void *process_work(void *arg) {
 
 	// This is a critical section. As we are going to write to a global
 	// value, the operation must me protected against race conditions.
-	pthread_mutex_lock(&lock);
-	pi_by_4 += acc;
-	pthread_mutex_unlock(&lock);
+	pthread_mutex_lock(&segment->lock);
+	segment->pi_by_4 += acc;
+	pthread_mutex_unlock(&segment->lock);
 
 	return NULL;
 }
@@ -70,17 +75,6 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	// Initialize mutex with default attributes
-	if(pthread_mutex_init(&lock, NULL))
-		DIE("Failed to init mutex\n");
-
-	// Tasks' arrays
-	if((threads = malloc(num_processos * sizeof(pthread_t))) == NULL)
-		DIE("Threads malloc failed\n");
-	if((tasks = malloc(num_processos * sizeof(task))) == NULL)
-		DIE("Tasks malloc failed\n");
-
-	
 	/**
 	 * ICP 
 	 */
@@ -91,7 +85,17 @@ int main(int argc, char **argv)
     int shmid = shmget(key, 1024, 0666 | IPC_CREAT); 
 
 	// shmat to attach to shared memory 
-    char *str = (char*) shmat(shmid, (void*) 0 , 0); 
+    segment = (shared_memory*) shmat(shmid, (void*) 0 , 0); 
+
+	// Initialize mutex with default attributes
+	if(pthread_mutex_init(&segment->lock, NULL))
+		DIE("Failed to init mutex\n");
+
+	// Tasks' arrays
+	if((threads = malloc(num_processos * sizeof(pthread_t))) == NULL)
+		DIE("Threads malloc failed\n");
+	if((tasks = malloc(num_processos * sizeof(task))) == NULL)
+		DIE("Tasks malloc failed\n");
 
 
 	// Initialize processes with default attributes.
@@ -114,10 +118,17 @@ int main(int argc, char **argv)
 				DIE("failed to join thread %d\n", i);
 	}
 
-	printf("pi ~= %.12f\n", pi_by_4 * 4);
+	printf("pi ~= %.12f\n", segment->pi_by_4 * 4);
 
-	if(pthread_mutex_destroy(&lock)) // Destroy mutex
+	if(pthread_mutex_destroy(&segment->lock)) // Destroy mutex
 		DIE("Failed to destroy mutex\n");
+
+	//detach from shared memory  
+    shmdt(segment); 
+    
+    // destroy the shared memory 
+    shmctl(shmid,IPC_RMID,NULL); 
+
 	free(threads);
 	free(tasks);
 	return 0;
