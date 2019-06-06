@@ -54,6 +54,8 @@ void *process_work(void *arg) {
 		acc += sqrt(1 - (x * x)) * interval_size;
 	}
 
+
+
 	// This is a critical section. As we are going to write to a global
 	// value, the operation must me protected against race conditions.
 	pthread_mutex_lock(&segment->lock);
@@ -82,10 +84,15 @@ int main(int argc, char **argv)
 	key_t key = ftok("shmfile", 65); 
 
 	// shmget returns an identifier in shmid 
-    int shmid = shmget(key, 1024, 0666 | IPC_CREAT); 
+	int shmid;
+    if( (shmid = shmget(key, 1024, 0666 | IPC_CREAT) ) == -1 ) {
+		DIE("Unable to obtain identifier in shmid.\n");
+	}
 
 	// shmat to attach to shared memory 
-    segment = (shared_memory*) shmat(shmid, (void*) 0 , 0); 
+    if( (segment = (shared_memory*) shmat(shmid, (void*) 0 , 0)) == (shared_memory*) -1 ) { // Cast to avoid warning
+		DIE("Unable to attach shared memory.\n");
+	}
 
 	// Initialize mutex with default attributes
 	if(pthread_mutex_init(&segment->lock, NULL))
@@ -118,7 +125,7 @@ int main(int argc, char **argv)
 				DIE("failed to join thread %d\n", i);
 	}
 
-	printf("pi ~= %.12f\n", segment->pi_by_4 * 4);
+	printf("pi ~= %.15f\n", segment->pi_by_4 * 4);
 
 	if(pthread_mutex_destroy(&segment->lock)) // Destroy mutex
 		DIE("Failed to destroy mutex\n");
