@@ -14,12 +14,13 @@
 #include <math.h>
 
 // ICP Libraries
+#include <unistd.h> 
 #include <sys/ipc.h> 
 #include <sys/shm.h> 
-#include <unistd.h> 
+#include <sys/wait.h> 
 
-unsigned num_processos; // number of worker threads
-unsigned N; // number of divisions at integration
+unsigned num_processes; // number of worker threads
+unsigned integration_divisions; // number of divisions at integration
 
 // Defines a task of integration over the quarter of circle, with an x-axis
 // start and end indexes. The work must be done in the interval [start, end[
@@ -33,7 +34,13 @@ typedef struct shared_memory {
 	pthread_mutex_t lock; // protects pi_by_4 writes
 } shared_memory;
 
-// Global Variable with the references to the shared memory segment.
+/**
+ * Global Variables
+ */ 
+
+// Identifier in shmid 
+int shmid;
+// Shared memory segment.
 shared_memory *segment;
 
 #define DIE(...) { \
@@ -46,7 +53,7 @@ shared_memory *segment;
 void *process_work(void *arg) {
 	task *t = (task *) arg;
 	double acc = 0; // Thread's local integration variable
-	double interval_size = 1.0 / N; // The circle radius is 1.0
+	double interval_size = 1.0 / integration_divisions; // The circle radius is 1.0
 
 	// Integrates f(x) = sqrt(1 - x^2) in [t->start, t->end[
 	for(int i = t->start; i < t->end; ++i) {
@@ -72,7 +79,7 @@ int main(int argc, char **argv)
 	task *tasks;
 
 	// Argument parsing
-	if (argc != 3 || sscanf(argv[1], "%u", &num_processos) != 1 || sscanf(argv[2], "%u", &N) != 1) {
+	if (argc != 3 || sscanf(argv[1], "%u", &num_processes) != 1 || sscanf(argv[2], "%u", &integration_divisions) != 1) {
 		printf("usage: %s <num_processos> <num_pontos>\n", argv[0]);
 		return 1;
 	}
@@ -83,8 +90,7 @@ int main(int argc, char **argv)
 	// ftok to generate unique key 
 	key_t key = ftok("shmfile", 65); 
 
-	// shmget returns an identifier in shmid 
-	int shmid;
+	// shmget returns an identifier in shmid
     if( (shmid = shmget(key, 1024, 0666 | IPC_CREAT) ) == -1 ) {
 		DIE("Unable to obtain identifier in shmid.\n");
 	}
@@ -99,17 +105,17 @@ int main(int argc, char **argv)
 		DIE("Failed to init mutex\n");
 
 	// Tasks' arrays
-	if((threads = malloc(num_processos * sizeof(pthread_t))) == NULL)
+	if((threads = malloc(num_processes * sizeof(pthread_t))) == NULL)
 		DIE("Threads malloc failed\n");
-	if((tasks = malloc(num_processos * sizeof(task))) == NULL)
+	if((tasks = malloc(num_processes * sizeof(task))) == NULL)
 		DIE("Tasks malloc failed\n");
 
 
 	// Initialize processes with default attributes.
 	// The work is being splitted as evenly as possible between threads.
-	int processes_with_one_more_work = N % num_processos;
-	for (int i = 0; i < num_processos; ++i) {
-		int work_size = N / num_processos;
+	int processes_with_one_more_work = integration_divisions % num_processes;
+	for (int i = 0; i < num_processes; ++i) {
+		int work_size = integration_divisions / num_processes;
 		if (i < processes_with_one_more_work)
 			work_size += 1;
 		tasks[i].start = i * work_size;
@@ -120,7 +126,7 @@ int main(int argc, char **argv)
 	}
 
 	// Finish threads and ignore their return values
-	for (int i = 0; i < num_processos; ++i) {
+	for (int i = 0; i < num_processes; ++i) {
 		if(pthread_join(threads[i], NULL))
 				DIE("failed to join thread %d\n", i);
 	}
