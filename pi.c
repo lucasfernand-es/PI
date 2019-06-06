@@ -19,7 +19,7 @@
 #include <sys/shm.h> 
 #include <sys/wait.h> 
 
-unsigned num_processes; // number of worker threads
+unsigned num_processes; // number of worker processes
 unsigned integration_divisions; // number of divisions at integration
 
 // Defines a task of integration over the quarter of circle, with an x-axis
@@ -75,8 +75,10 @@ void *process_work(void *arg) {
 
 int main(int argc, char **argv)
 {
-	pthread_t *threads;
+	pid_t child_pid, wpid;
+	int status = 0;
 	task *tasks;
+	
 
 	// Argument parsing
 	if (argc != 3 || sscanf(argv[1], "%u", &num_processes) != 1 || sscanf(argv[2], "%u", &integration_divisions) != 1) {
@@ -102,13 +104,11 @@ int main(int argc, char **argv)
 
 	// Initialize mutex with default attributes
 	if(pthread_mutex_init(&segment->lock, NULL))
-		DIE("Failed to init mutex\n");
+		DIE("Failed to init mutex.\n");
 
 	// Tasks' arrays
-	if((threads = malloc(num_processes * sizeof(pthread_t))) == NULL)
-		DIE("Threads malloc failed\n");
 	if((tasks = malloc(num_processes * sizeof(task))) == NULL)
-		DIE("Tasks malloc failed\n");
+		DIE("Tasks malloc failed.\n");
 
 
 	// Initialize processes with default attributes.
@@ -121,20 +121,33 @@ int main(int argc, char **argv)
 		tasks[i].start = i * work_size;
 		tasks[i].end = (i + 1) * work_size;
 
-		if(pthread_create(&threads[i], NULL, process_work, (void *)&tasks[i]))
-			DIE("Failed to create thread %d\n", i)
+		// Fork a child
+		child_pid = fork();
+
+		// Child Process
+		if( child_pid == 0 ) { 
+			process_work( (void *)&tasks[i] );
+			// Child processes do not need to continue to process the rest of the code.
+			exit(EXIT_SUCCESS); 
+		} 
+		// Parent Process
+		else if ( child_pid != -1 ) {
+			// Parent is Waiting
+			// DO NOTHING
+		}
+		else {
+			DIE("Error while calling the fork function.\n");
+		}
 	}
 
-	// Finish threads and ignore their return values
-	for (int i = 0; i < num_processes; ++i) {
-		if(pthread_join(threads[i], NULL))
-				DIE("failed to join thread %d\n", i);
-	}
+	// Parent process waits for all children processes to finish.
+	while ((wpid = wait(&status)) > 0);
 
-	printf("pi ~= %.15f\n", segment->pi_by_4 * 4);
-
+	printf("%.12f\n", segment->pi_by_4 * 4); // "pi ~= %.12f\n"
+	// 3.141592653589
+	
 	if(pthread_mutex_destroy(&segment->lock)) // Destroy mutex
-		DIE("Failed to destroy mutex\n");
+		DIE("Failed to destroy mutex.\n");
 
 	//detach from shared memory  
     shmdt(segment); 
@@ -142,7 +155,6 @@ int main(int argc, char **argv)
     // destroy the shared memory 
     shmctl(shmid,IPC_RMID,NULL); 
 
-	free(threads);
 	free(tasks);
 	return 0;
 }
