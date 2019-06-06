@@ -25,9 +25,11 @@ pthread_mutex_t lock; // protects pi_by_4 writes
 
 // Defines a task of integration over the quarter of circle, with an x-axis
 // start and end indexes. The work must be done in the interval [start, end[
-struct task {
+typedef struct task {
 	int start, end;
-};
+} task;
+
+
 
 #define DIE(...) { \
 	fprintf(stderr, __VA_ARGS__); \
@@ -37,7 +39,7 @@ struct task {
 // This is the function to be executed by all worker_processes. It receives a task
 // and sums the process's work at global pi_by_4 variable.
 void *process_work(void *arg) {
-	struct task *t = (struct task *)arg;
+	task *t = (task *)arg;
 	double acc = 0; // Thread's local integration variable
 	double interval_size = 1.0 / N; // The circle radius is 1.0
 
@@ -60,7 +62,7 @@ void *process_work(void *arg) {
 int main(int argc, char **argv)
 {
 	pthread_t *threads;
-	struct task *tasks;
+	task *tasks;
 
 	// Argument parsing
 	if (argc != 3 || sscanf(argv[1], "%u", &num_processos) != 1 || sscanf(argv[2], "%u", &N) != 1) {
@@ -75,7 +77,7 @@ int main(int argc, char **argv)
 	// Tasks' arrays
 	if((threads = malloc(num_processos * sizeof(pthread_t))) == NULL)
 		DIE("Threads malloc failed\n");
-	if((tasks = malloc(num_processos * sizeof(struct task))) == NULL)
+	if((tasks = malloc(num_processos * sizeof(task))) == NULL)
 		DIE("Tasks malloc failed\n");
 
 	
